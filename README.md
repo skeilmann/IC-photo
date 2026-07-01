@@ -17,9 +17,12 @@ Google Drive folder**; the site is the pretty front door to it.
   never their whole Drive).
 - **Hosting** — GitHub Pages, straight from this repository. Free, static, nothing to maintain.
 
-Features: masonry gallery with lightbox and keyboard navigation, drag-and-drop
-multi-file upload with progress bars, grouping by **day** (from the photo's EXIF
-date) and by **person** (who uploaded it), live counters, video support.
+Features: masonry gallery with lightbox (keyboard + swipe navigation),
+pick-check-confirm uploads with progress bars, grouping by **day** (EXIF date)
+and **person** (uploader), a **map view** of geotagged photos (Leaflet +
+OpenStreetMap), sorting and filters (day / person / photos vs videos / time of
+day), video duration badges, camera info, automatic duplicate hiding, and
+delete-own-photos (moves the file to the Drive trash).
 
 ---
 

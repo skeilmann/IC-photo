@@ -40,6 +40,10 @@
     fDay: $("#f-day"),
     fPerson: $("#f-person"),
     fType: $("#f-type"),
+    fTime: $("#f-time"),
+    map: $("#map"),
+    mapNote: $("#map-note"),
+    lbDelete: $("#lb-delete"),
     fReset: $("#f-reset"),
     galleryStatus: $("#gallery-status"),
     galleryGroups: $("#gallery-groups"),
@@ -76,8 +80,9 @@
     els.folderLink.href = "https://drive.google.com/drive/folders/" + cfg.FOLDER_ID;
 
     const fields =
-      "nextPageToken,files(id,name,mimeType,createdTime,thumbnailLink," +
-      "imageMediaMetadata(time,width,height),videoMediaMetadata(durationMillis)," +
+      "nextPageToken,files(id,name,mimeType,createdTime,thumbnailLink,md5Checksum," +
+      "imageMediaMetadata(time,width,height,location,cameraMake,cameraModel)," +
+      "videoMediaMetadata(durationMillis)," +
       "owners(displayName),lastModifyingUser(displayName))";
 
     let out = [];
@@ -109,6 +114,13 @@
     files = out.filter(
       (f) => f.mimeType.startsWith("image/") || f.mimeType.startsWith("video/")
     );
+
+    // Hide exact duplicates (same bytes uploaded twice) — keep the earliest
+    const byHash = new Map();
+    for (const f of [...files].reverse()) {
+      if (f.md5Checksum) byHash.set(f.md5Checksum, f);
+    }
+    files = files.filter((f) => !f.md5Checksum || byHash.get(f.md5Checksum) === f);
 
     updateStats();
     populateFilters();
@@ -150,6 +162,7 @@
   function visibleFiles() {
     let list = files;
     if (els.fType.value) list = list.filter((f) => f.mimeType.startsWith(els.fType.value + "/"));
+    if (els.fTime.value) list = list.filter((f) => timeOfDay(f) === els.fTime.value);
     if (els.fDay.value) list = list.filter((f) => dayKey(f) === els.fDay.value);
     if (els.fPerson.value) list = list.filter((f) => fileOwner(f) === els.fPerson.value);
     const dir = els.fSort.value === "old" ? 1 : -1;
@@ -158,14 +171,14 @@
 
   function updateToolbarState() {
     let any = false;
-    for (const sel of [els.fDay, els.fPerson, els.fType]) {
+    for (const sel of [els.fDay, els.fPerson, els.fType, els.fTime]) {
       sel.classList.toggle("is-set", !!sel.value);
       if (sel.value) any = true;
     }
     els.fReset.hidden = !any;
   }
 
-  [els.fSort, els.fDay, els.fPerson, els.fType].forEach((sel) =>
+  [els.fSort, els.fDay, els.fPerson, els.fType, els.fTime].forEach((sel) =>
     sel.addEventListener("change", () => {
       updateToolbarState();
       renderGallery();
@@ -173,7 +186,7 @@
   );
 
   els.fReset.addEventListener("click", () => {
-    els.fDay.value = els.fPerson.value = els.fType.value = "";
+    els.fDay.value = els.fPerson.value = els.fType.value = els.fTime.value = "";
     updateToolbarState();
     renderGallery();
   });
@@ -211,6 +224,35 @@
     return "https://drive.google.com/thumbnail?id=" + f.id + "&sz=w" + size;
   }
 
+  // Prefer the lh3.googleusercontent.com link from the API — unlike the
+  // drive.google.com/thumbnail redirect it loads reliably on mobile
+  // browsers without Drive cookies. "=sN" suffix picks the size.
+  function imgUrl(f, size) {
+    if (f.thumbnailLink) return f.thumbnailLink.replace(/=s\d+.*$/, "=s" + size);
+    return thumbUrl(f, size);
+  }
+
+  function timeOfDay(f) {
+    const h = fileDate(f).getHours();
+    if (h >= 5 && h < 12) return "morning";
+    if (h >= 12 && h < 17) return "afternoon";
+    if (h >= 17 && h < 22) return "evening";
+    return "night";
+  }
+
+  function fmtDuration(ms) {
+    const s = Math.round(ms / 1000);
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+
+  function geo(f) {
+    const loc = f.imageMediaMetadata && f.imageMediaMetadata.location;
+    if (loc && typeof loc.latitude === "number" && (loc.latitude || loc.longitude)) {
+      return [loc.latitude, loc.longitude];
+    }
+    return null;
+  }
+
   function updateStats() {
     if (!files.length) return;
     els.statPhotos.textContent = files.length;
@@ -232,6 +274,17 @@
     }
 
     const shown = visibleFiles(); // filters + sort applied
+
+    if (currentGroup === "map") {
+      els.galleryStatus.textContent = "";
+      els.map.hidden = false;
+      els.mapNote.hidden = false;
+      renderMap(shown);
+      return;
+    }
+    els.map.hidden = true;
+    els.mapNote.hidden = true;
+
     if (!shown.length) {
       els.galleryStatus.textContent = "No photos match these filters.";
       return;
@@ -283,16 +336,15 @@
         const img = document.createElement("img");
         img.loading = "lazy";
         img.alt = f.name;
-        img.src = f.thumbnailLink
-          ? f.thumbnailLink.replace(/=s\d+$/, "=s640")
-          : thumbUrl(f, 640);
+        img.src = imgUrl(f, 640);
         img.onerror = () => { img.onerror = null; img.src = thumbUrl(f, 640); };
         fig.appendChild(img);
 
         if (f.mimeType.startsWith("video/")) {
           const badge = document.createElement("span");
           badge.className = "badge-video";
-          badge.textContent = "VIDEO";
+          const dur = f.videoMediaMetadata && f.videoMediaMetadata.durationMillis;
+          badge.textContent = dur ? "▶ " + fmtDuration(+dur) : "VIDEO";
           fig.appendChild(badge);
         }
 
@@ -318,6 +370,65 @@
       renderGallery();
     });
   });
+
+  // ============================================================
+  // Map view (Leaflet + OpenStreetMap, photos with EXIF GPS)
+  // ============================================================
+
+  let leafletMap = null;
+  let markerLayer = null;
+
+  function renderMap(shown) {
+    if (!window.L) { // Leaflet still loading
+      setTimeout(() => { if (currentGroup === "map") renderMap(visibleFiles()); }, 300);
+      return;
+    }
+    if (!leafletMap) {
+      leafletMap = L.map(els.map).setView([59.3293, 18.0686], 12); // Stockholm
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(leafletMap);
+      markerLayer = L.layerGroup().addTo(leafletMap);
+    }
+    // map was hidden while created → recalc size
+    setTimeout(() => leafletMap.invalidateSize(), 60);
+
+    markerLayer.clearLayers();
+    const located = shown.filter(geo);
+    flatOrder = located; // lightbox navigates the mapped photos
+    if (!located.length) {
+      els.galleryStatus.textContent = "None of the current photos carry location data.";
+      return;
+    }
+    els.galleryStatus.textContent = "";
+
+    const bounds = [];
+    located.forEach((f, idx) => {
+      const ll = geo(f);
+      bounds.push(ll);
+      const isVideo = f.mimeType.startsWith("video/");
+      const marker = L.marker(ll, {
+        icon: L.divIcon({
+          className: "",
+          html: '<div class="pin' + (isVideo ? " pin-video" : "") + '"></div>',
+          iconSize: [18, 18],
+          iconAnchor: [9, 9],
+        }),
+      });
+      const pop = document.createElement("div");
+      pop.className = "map-pop";
+      pop.innerHTML = '<img alt=""><span></span>';
+      pop.querySelector("img").src = imgUrl(f, 300);
+      pop.querySelector("span").textContent =
+        fileOwner(f) + " · " +
+        fileDate(f).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      pop.addEventListener("click", () => openLightbox(idx));
+      marker.bindPopup(pop);
+      marker.addTo(markerLayer);
+    });
+    leafletMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+  }
 
   // ============================================================
   // Lightbox
@@ -348,17 +459,38 @@
       iframe.allow = "autoplay; fullscreen";
       els.lbStage.appendChild(iframe);
     } else {
+      // show the (usually cached) small version instantly, then swap in
+      // the full-size one when it has loaded
       const img = document.createElement("img");
-      img.src = thumbUrl(f, 2000);
       img.alt = f.name;
+      img.className = "is-loading";
+      img.src = imgUrl(f, 640);
       els.lbStage.appendChild(img);
+
+      const idx = lbIndex;
+      const hi = new Image();
+      hi.onload = () => {
+        if (lbIndex === idx && els.lbStage.contains(img)) {
+          img.src = hi.src;
+          img.classList.remove("is-loading");
+        }
+      };
+      hi.onerror = () => {
+        const alt = thumbUrl(f, 2000); // fall back to the other endpoint
+        if (hi.src !== alt) { hi.src = alt; }
+        else img.classList.remove("is-loading");
+      };
+      hi.src = imgUrl(f, 2048);
     }
+    const cam = f.imageMediaMetadata &&
+      (f.imageMediaMetadata.cameraModel || f.imageMediaMetadata.cameraMake);
     els.lbCaption.textContent =
       fileOwner(f) + " · " +
       fileDate(f).toLocaleString("en-GB", {
         weekday: "short", day: "numeric", month: "long",
         hour: "2-digit", minute: "2-digit",
-      }) + " · " + (lbIndex + 1) + " / " + flatOrder.length;
+      }) + (cam ? " · 📷 " + cam : "") +
+      " · " + (lbIndex + 1) + " / " + flatOrder.length;
   }
 
   function lbStep(delta) {
@@ -378,6 +510,57 @@
     if (e.key === "ArrowLeft") lbStep(-1);
     if (e.key === "ArrowRight") lbStep(1);
   });
+
+  // ---------- delete (moves the file to the Drive trash) ----------
+
+  let pendingDelete = false;
+
+  async function deleteCurrent() {
+    const f = flatOrder[lbIndex];
+    if (!f) return;
+    if (!accessToken) {
+      pendingDelete = true;
+      requestSignIn();
+      return;
+    }
+    if (!window.confirm("Delete this photo from the shared pool?\n(It moves to the Drive trash and can be restored for 30 days.)")) return;
+
+    els.lbDelete.disabled = true;
+    try {
+      const res = await fetch("https://www.googleapis.com/drive/v3/files/" + f.id, {
+        method: "PATCH",
+        headers: {
+          Authorization: "Bearer " + accessToken,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ trashed: true }),
+      });
+      if (res.ok) {
+        files = files.filter((x) => x.id !== f.id);
+        updateStats();
+        populateFilters();
+        if (files.length && flatOrder.length > 1) {
+          renderGallery();
+          // stay in the lightbox on the next photo
+          lbIndex = Math.min(lbIndex, flatOrder.length - 1);
+          showLightboxItem();
+        } else {
+          closeLightbox();
+          renderGallery();
+        }
+      } else if (res.status === 403 || res.status === 404) {
+        window.alert("You can only delete photos that you uploaded yourself.");
+      } else {
+        window.alert("Delete failed (" + res.status + "). Please try again.");
+      }
+    } catch {
+      window.alert("Delete failed — check your connection and try again.");
+    } finally {
+      els.lbDelete.disabled = false;
+    }
+  }
+
+  els.lbDelete.addEventListener("click", deleteCurrent);
 
   // swipe left/right on touch screens
   let touchX = null;
@@ -429,10 +612,14 @@
     els.userChip.hidden = false;
     els.dzTitle.textContent = "Choose photos, " + userName.split(" ")[0];
 
-    // If sign-in was triggered by the Upload button, continue now
+    // If sign-in was triggered by the Upload or Delete button, continue now
     if (pendingUpload) {
       pendingUpload = false;
       confirmUpload();
+    }
+    if (pendingDelete) {
+      pendingDelete = false;
+      deleteCurrent();
     }
   }
 

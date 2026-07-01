@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Caveat:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="assets/logo.svg" />
@@ -118,6 +119,8 @@
       <button class="tab tab-orange" data-group="day">BY DAY</button>
       <span class="tab-sep">|</span>
       <button class="tab tab-yellow" data-group="person">BY PERSON</button>
+      <span class="tab-sep">|</span>
+      <button class="tab tab-map" data-group="map">MAP</button>
     </nav>
 
     <div class="toolbar" id="toolbar" hidden>
@@ -136,10 +139,19 @@
         <option value="image">Photos only</option>
         <option value="video">Videos only</option>
       </select>
+      <select id="f-time" class="select" aria-label="Filter by time of day">
+        <option value="">Any time of day</option>
+        <option value="morning">🌅 Morning (5–12)</option>
+        <option value="afternoon">☀️ Afternoon (12–17)</option>
+        <option value="evening">🌆 Evening (17–22)</option>
+        <option value="night">🌙 Night (22–5)</option>
+      </select>
       <button id="f-reset" class="toolbar-reset" hidden>× Clear filters</button>
     </div>
 
     <div id="gallery-status" class="gallery-status">Loading photos…</div>
+    <div id="map" class="map" hidden></div>
+    <p id="map-note" class="map-note" hidden>Only photos with location data in them appear on the map (sending via chat apps usually removes it).</p>
     <div id="gallery-groups"></div>
   </section>
 
@@ -159,8 +171,10 @@
     <div class="lb-stage" id="lb-stage"></div>
     <button class="lb-next" aria-label="Next">›</button>
     <div class="lb-caption" id="lb-caption"></div>
+    <button class="lb-delete" id="lb-delete">🗑 Delete</button>
   </div>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="js/config.js"></script>
   <script src="js/app.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>

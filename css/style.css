@@ -422,6 +422,38 @@ a { color: var(--blue); }
 .tab-blue.is-active, .tab-blue:hover { color: var(--blue); border-color: var(--blue); }
 .tab-orange.is-active, .tab-orange:hover { color: var(--orange); border-color: var(--orange); }
 .tab-yellow.is-active, .tab-yellow:hover { color: var(--yellow); border-color: var(--yellow); }
+.tab-map.is-active, .tab-map:hover { color: var(--blue-dark); border-color: var(--blue-dark); }
+
+/* ---------- map view ---------- */
+
+.map {
+  height: min(72vh, 640px);
+  border-radius: var(--radius);
+  border: 3px solid var(--line);
+  z-index: 1;
+}
+
+.map-note {
+  color: var(--gray);
+  font-size: 0.82rem;
+  margin: 10px 2px 0;
+}
+
+.pin {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  background: var(--orange);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+}
+
+.pin-video { background: var(--blue); }
+
+.leaflet-popup-content { margin: 8px; }
+.map-pop { cursor: pointer; text-align: center; font-family: var(--font-body); }
+.map-pop img { width: 150px; height: 100px; object-fit: cover; border-radius: 6px; margin-bottom: 4px; }
+.map-pop span { font-size: 0.75rem; font-weight: 600; color: var(--ink); }
 
 /* ---------- filter / sort toolbar ---------- */
 
@@ -588,6 +620,25 @@ a { color: var(--blue); }
 .lb-close { top: 14px; right: 22px; font-size: 2.6rem; }
 .lb-prev { left: 10px; top: 50%; transform: translateY(-50%); font-size: 3.4rem; padding: 20px 14px; }
 .lb-next { right: 10px; top: 50%; transform: translateY(-50%); font-size: 3.4rem; padding: 20px 14px; }
+
+.lb-stage img.is-loading { opacity: 0.6; filter: blur(2px); }
+
+.lb-delete {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  border-radius: 999px;
+  color: #fff;
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 0.8rem;
+  padding: 9px 16px;
+  cursor: pointer;
+}
+
+.lb-delete:hover { background: #c0392b; }
 
 .lb-caption {
   position: absolute;
