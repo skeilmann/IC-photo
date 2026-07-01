@@ -120,6 +120,25 @@
       <button class="tab tab-yellow" data-group="person">BY PERSON</button>
     </nav>
 
+    <div class="toolbar" id="toolbar" hidden>
+      <select id="f-sort" class="select" aria-label="Sort order">
+        <option value="new">Newest first</option>
+        <option value="old">Oldest first</option>
+      </select>
+      <select id="f-day" class="select" aria-label="Filter by day">
+        <option value="">All days</option>
+      </select>
+      <select id="f-person" class="select" aria-label="Filter by person">
+        <option value="">Everyone</option>
+      </select>
+      <select id="f-type" class="select" aria-label="Filter by type">
+        <option value="">Photos &amp; videos</option>
+        <option value="image">Photos only</option>
+        <option value="video">Videos only</option>
+      </select>
+      <button id="f-reset" class="toolbar-reset" hidden>× Clear filters</button>
+    </div>
+
     <div id="gallery-status" class="gallery-status">Loading photos…</div>
     <div id="gallery-groups"></div>
   </section>

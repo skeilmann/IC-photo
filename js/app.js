@@ -35,6 +35,12 @@
     dzSub: $("#dz-sub"),
     fileInput: $("#file-input"),
     uploadList: $("#upload-list"),
+    toolbar: $("#toolbar"),
+    fSort: $("#f-sort"),
+    fDay: $("#f-day"),
+    fPerson: $("#f-person"),
+    fType: $("#f-type"),
+    fReset: $("#f-reset"),
     galleryStatus: $("#gallery-status"),
     galleryGroups: $("#gallery-groups"),
     heroStats: $("#hero-stats"),
@@ -105,8 +111,72 @@
     );
 
     updateStats();
+    populateFilters();
     renderGallery();
   }
+
+  // ---------- filtering & sorting ----------
+
+  function populateFilters() {
+    if (!files.length) return;
+
+    const keep = (sel) => sel.value; // preserve selection across refreshes
+    const dayVal = keep(els.fDay);
+    const personVal = keep(els.fPerson);
+
+    const days = [...new Set(files.map(dayKey))].sort();
+    els.fDay.innerHTML = '<option value="">All days</option>';
+    for (const k of days) {
+      const opt = document.createElement("option");
+      opt.value = k;
+      opt.textContent = dayLabel(k);
+      els.fDay.appendChild(opt);
+    }
+    els.fDay.value = days.includes(dayVal) ? dayVal : "";
+
+    const people = [...new Set(files.map(fileOwner))].sort((a, b) => a.localeCompare(b));
+    els.fPerson.innerHTML = '<option value="">Everyone</option>';
+    for (const p of people) {
+      const opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      els.fPerson.appendChild(opt);
+    }
+    els.fPerson.value = people.includes(personVal) ? personVal : "";
+
+    els.toolbar.hidden = false;
+  }
+
+  function visibleFiles() {
+    let list = files;
+    if (els.fType.value) list = list.filter((f) => f.mimeType.startsWith(els.fType.value + "/"));
+    if (els.fDay.value) list = list.filter((f) => dayKey(f) === els.fDay.value);
+    if (els.fPerson.value) list = list.filter((f) => fileOwner(f) === els.fPerson.value);
+    const dir = els.fSort.value === "old" ? 1 : -1;
+    return [...list].sort((a, b) => dir * (fileDate(a) - fileDate(b)));
+  }
+
+  function updateToolbarState() {
+    let any = false;
+    for (const sel of [els.fDay, els.fPerson, els.fType]) {
+      sel.classList.toggle("is-set", !!sel.value);
+      if (sel.value) any = true;
+    }
+    els.fReset.hidden = !any;
+  }
+
+  [els.fSort, els.fDay, els.fPerson, els.fType].forEach((sel) =>
+    sel.addEventListener("change", () => {
+      updateToolbarState();
+      renderGallery();
+    })
+  );
+
+  els.fReset.addEventListener("click", () => {
+    els.fDay.value = els.fPerson.value = els.fType.value = "";
+    updateToolbarState();
+    renderGallery();
+  });
 
   function fileDate(f) {
     const exif = f.imageMediaMetadata && f.imageMediaMetadata.time;
@@ -160,22 +230,29 @@
         "No photos yet — be the first to add some! 📸";
       return;
     }
+
+    const shown = visibleFiles(); // filters + sort applied
+    if (!shown.length) {
+      els.galleryStatus.textContent = "No photos match these filters.";
+      return;
+    }
     els.galleryStatus.textContent = "";
 
-    let groups; // array of [title, files[]]
+    let groups; // array of [title, files[]] — lists keep the chosen sort order
     if (currentGroup === "day") {
       const map = new Map();
-      for (const f of files) {
+      for (const f of shown) {
         const k = dayKey(f);
         if (!map.has(k)) map.set(k, []);
         map.get(k).push(f);
       }
+      const dir = els.fSort.value === "old" ? 1 : -1;
       groups = [...map.entries()]
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([k, list]) => [dayLabel(k), list.sort((a, b) => fileDate(a) - fileDate(b))]);
+        .sort((a, b) => dir * a[0].localeCompare(b[0]))
+        .map(([k, list]) => [dayLabel(k), list]);
     } else if (currentGroup === "person") {
       const map = new Map();
-      for (const f of files) {
+      for (const f of shown) {
         const k = fileOwner(f);
         if (!map.has(k)) map.set(k, []);
         map.get(k).push(f);
@@ -184,7 +261,7 @@
         b[1].length - a[1].length || a[0].localeCompare(b[0])
       );
     } else {
-      groups = [[null, files]]; // already newest-first from the API
+      groups = [[null, shown]];
     }
 
     for (const [title, list] of groups) {
