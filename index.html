@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Remember Stockholm — Convention Photo Pool 2026</title>
+  <meta name="description" content="Shared photo pool for our international convention in Stockholm 2026. Everyone's photos, one place." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Caveat:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='30' cy='35' r='22' fill='%231B75BC'/><circle cx='65' cy='60' r='22' fill='%23F7941D'/><circle cx='45' cy='75' r='14' fill='%23FFC20E'/></svg>" />
+</head>
+<body>
+
+  <!-- Top ribbon, like the PDF section headers -->
+  <div class="ribbon">
+    <span class="ribbon-text">DISCOVER GUIDE&nbsp;|&nbsp;PHOTO POOL</span>
+    <span id="auth-area" class="ribbon-auth">
+      <button id="signin-btn" class="btn-ribbon" hidden>Sign in with Google</button>
+      <span id="user-chip" class="user-chip" hidden></span>
+    </span>
+  </div>
+
+  <!-- Hero -->
+  <header class="hero">
+    <div class="hero-inner">
+      <h1 class="hero-title">
+        <span class="t-gray">REMEMBER</span><br />
+        <span class="t-gray">OUR</span><br />
+        <span class="t-blue">STOCKHOLM</span><br />
+        <span class="t-orange">2<span class="zero">0</span>26</span>
+      </h1>
+      <p class="hero-hand">everyone's photos, one shared place</p>
+      <p class="hero-sub">
+        Drop in the photos you took at the convention and browse what everyone
+        else captured. It all lands in our shared Google&nbsp;Drive folder.
+      </p>
+      <div class="hero-actions">
+        <a href="#upload" class="btn btn-orange">Add your photos</a>
+        <a href="#gallery" class="btn btn-blue-outline">Browse the pool</a>
+      </div>
+      <div class="hero-stats" id="hero-stats" hidden>
+        <div class="stat"><span class="stat-num t-blue" id="stat-photos">0</span><span class="stat-label">photos</span></div>
+        <div class="stat"><span class="stat-num t-orange" id="stat-people">0</span><span class="stat-label">people</span></div>
+        <div class="stat"><span class="stat-num t-yellow" id="stat-days">0</span><span class="stat-label">days</span></div>
+      </div>
+    </div>
+    <!-- Map-blob decoration in the guide's style -->
+    <svg class="hero-map" viewBox="0 0 400 300" aria-hidden="true">
+      <polygon points="20,60 130,30 160,110 90,150 30,130" fill="#F7941D"/>
+      <polygon points="180,20 260,40 250,100 190,90" fill="#FFC20E"/>
+      <polygon points="280,90 390,70 380,170 300,180 270,140" fill="#1B75BC"/>
+      <polygon points="60,180 170,170 200,250 100,280 40,240" fill="#1B75BC"/>
+      <polygon points="230,200 340,210 320,290 240,280" fill="#F7941D"/>
+      <polygon points="150,120 180,115 195,150 155,160" fill="#FFC20E"/>
+    </svg>
+  </header>
+
+  <!-- Setup notice (shown until config.js is filled in) -->
+  <section id="setup-notice" class="setup-notice" hidden>
+    <h2>⚙️ Almost there — connect your Google Drive</h2>
+    <p>
+      This site isn't linked to a Drive folder yet. Open <code>js/config.js</code>
+      and fill in your <strong>API key</strong>, <strong>OAuth client ID</strong> and
+      <strong>folder ID</strong>. The step-by-step guide is in
+      <a href="https://github.com/skeilmann/IC-photo#setup" target="_blank" rel="noopener">the README</a>.
+    </p>
+  </section>
+
+  <!-- Upload -->
+  <section id="upload" class="section">
+    <div class="section-head">
+      <h2 class="section-title t-orange">ADD PHOTOS</h2>
+      <p class="section-sub">Sign in with your Google account, then drop your photos here — they go straight into the shared folder.</p>
+    </div>
+
+    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload photos">
+      <svg class="dz-icon" viewBox="0 0 64 64" aria-hidden="true">
+        <rect x="8" y="18" width="48" height="36" rx="5" fill="none" stroke="currentColor" stroke-width="3.5"/>
+        <path d="M22 18 26 11h12l4 7" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/>
+        <circle cx="32" cy="36" r="9" fill="none" stroke="currentColor" stroke-width="3.5"/>
+      </svg>
+      <p class="dz-title" id="dz-title">Drag &amp; drop photos here</p>
+      <p class="dz-sub" id="dz-sub">or tap to choose from your device</p>
+      <input type="file" id="file-input" accept="image/*,video/*" multiple hidden />
+    </div>
+
+    <ul id="upload-list" class="upload-list" aria-live="polite"></ul>
+  </section>
+
+  <!-- Gallery -->
+  <section id="gallery" class="section">
+    <div class="section-head">
+      <h2 class="section-title t-blue">THE POOL</h2>
+      <p class="section-sub">Everything everyone has shared so far.</p>
+    </div>
+
+    <nav class="tabs" aria-label="Group photos">
+      <button class="tab tab-blue is-active" data-group="all">ALL</button>
+      <span class="tab-sep">|</span>
+      <button class="tab tab-orange" data-group="day">BY DAY</button>
+      <span class="tab-sep">|</span>
+      <button class="tab tab-yellow" data-group="person">BY PERSON</button>
+    </nav>
+
+    <div id="gallery-status" class="gallery-status">Loading photos…</div>
+    <div id="gallery-groups"></div>
+  </section>
+
+  <footer class="footer">
+    <p class="footer-hand">see you at the next one!</p>
+    <p class="footer-note">Photos live in our shared Google Drive folder · <a id="folder-link" href="#" target="_blank" rel="noopener">open it in Drive</a></p>
+  </footer>
+
+  <!-- Lightbox -->
+  <div id="lightbox" class="lightbox" hidden>
+    <button class="lb-close" aria-label="Close">×</button>
+    <button class="lb-prev" aria-label="Previous">‹</button>
+    <div class="lb-stage" id="lb-stage"></div>
+    <button class="lb-next" aria-label="Next">›</button>
+    <div class="lb-caption" id="lb-caption"></div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</body>
+</html>
