@@ -15,7 +15,7 @@ window.IC_CONFIG = {
   // 3) The ID of the shared Google Drive folder that holds the photos.
   //    It's the last part of the folder URL:
   //    https://drive.google.com/drive/folders/<THIS_PART>
-  FOLDER_ID: "https://drive.google.com/drive/folders/14OS_wOhBpwwRQtuworJfFxf8V7lkoU0I?usp=sharing",
+  FOLDER_ID: "14OS_wOhBpwwRQtuworJfFxf8V7lkoU0I",
 
   // Optional: shown as the site/album name in a few places.
   EVENT_NAME: "Stockholm Convention 2026",
