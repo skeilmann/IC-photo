@@ -25,6 +25,12 @@
     signinBtn: $("#signin-btn"),
     userChip: $("#user-chip"),
     dropzone: $("#dropzone"),
+    tray: $("#tray"),
+    trayGrid: $("#tray-grid"),
+    trayCount: $("#tray-count"),
+    trayUpload: $("#tray-upload"),
+    trayClear: $("#tray-clear"),
+    fab: $("#fab"),
     dzTitle: $("#dz-title"),
     dzSub: $("#dz-sub"),
     fileInput: $("#file-input"),
@@ -296,6 +302,18 @@
     if (e.key === "ArrowRight") lbStep(1);
   });
 
+  // swipe left/right on touch screens
+  let touchX = null;
+  els.lightbox.addEventListener("touchstart", (e) => {
+    touchX = e.changedTouches[0].clientX;
+  }, { passive: true });
+  els.lightbox.addEventListener("touchend", (e) => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    touchX = null;
+    if (Math.abs(dx) > 50) lbStep(dx < 0 ? 1 : -1);
+  }, { passive: true });
+
   // ============================================================
   // Sign-in + upload (Google Identity Services, drive.file scope)
   // ============================================================
@@ -332,12 +350,12 @@
     els.signinBtn.hidden = true;
     els.userChip.textContent = "📷 " + userName;
     els.userChip.hidden = false;
-    els.dzTitle.textContent = "Drag & drop photos here, " + userName.split(" ")[0];
+    els.dzTitle.textContent = "Choose photos, " + userName.split(" ")[0];
 
-    // If sign-in was triggered by a pending drop, upload it now
-    if (pendingFiles.length) {
-      const batch = pendingFiles.splice(0);
-      uploadFiles(batch);
+    // If sign-in was triggered by the Upload button, continue now
+    if (pendingUpload) {
+      pendingUpload = false;
+      confirmUpload();
     }
   }
 
@@ -348,9 +366,10 @@
 
   els.signinBtn.addEventListener("click", requestSignIn);
 
-  // ---------- dropzone ----------
+  // ---------- pick → check → confirm flow ----------
 
-  let pendingFiles = [];
+  let staged = [];        // Files waiting for the user to press "Upload"
+  let pendingUpload = false;
 
   function handlePicked(fileList) {
     const media = [...fileList].filter(
@@ -362,14 +381,67 @@
       els.setupNotice.scrollIntoView({ behavior: "smooth" });
       return;
     }
+    staged = staged.concat(media);
+    renderTray();
+    els.tray.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function renderTray() {
+    els.trayGrid.innerHTML = "";
+    if (!staged.length) {
+      els.tray.hidden = true;
+      return;
+    }
+    staged.forEach((file, i) => {
+      const cell = document.createElement("div");
+      cell.className = "tray-thumb";
+      if (file.type.startsWith("image/")) {
+        const img = document.createElement("img");
+        img.alt = file.name;
+        img.src = URL.createObjectURL(file);
+        img.onload = () => URL.revokeObjectURL(img.src);
+        cell.appendChild(img);
+      } else {
+        const v = document.createElement("span");
+        v.className = "t-video";
+        v.textContent = "▶";
+        cell.appendChild(v);
+      }
+      const rm = document.createElement("button");
+      rm.className = "tray-remove";
+      rm.setAttribute("aria-label", "Remove " + file.name);
+      rm.textContent = "×";
+      rm.addEventListener("click", () => {
+        staged.splice(i, 1);
+        renderTray();
+      });
+      cell.appendChild(rm);
+      els.trayGrid.appendChild(cell);
+    });
+    els.trayCount.textContent =
+      "— " + staged.length + (staged.length === 1 ? " photo" : " photos");
+    els.tray.hidden = false;
+  }
+
+  function confirmUpload() {
+    if (!staged.length) return;
     if (!accessToken) {
-      pendingFiles = media;
+      pendingUpload = true;
       requestSignIn();
       return;
     }
-    uploadFiles(media);
+    const batch = staged.splice(0);
+    renderTray();
+    uploadFiles(batch);
   }
 
+  els.trayUpload.addEventListener("click", confirmUpload);
+  els.trayClear.addEventListener("click", () => {
+    staged = [];
+    renderTray();
+  });
+
+  els.fab.addEventListener("click", () => els.fileInput.click());
   els.dropzone.addEventListener("click", () => els.fileInput.click());
   els.dropzone.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); els.fileInput.click(); }

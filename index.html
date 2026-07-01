@@ -2,20 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1B75BC" />
   <title>Remember Stockholm — Convention Photo Pool 2026</title>
   <meta name="description" content="Shared photo pool for our international convention in Stockholm 2026. Everyone's photos, one place." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Caveat:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='30' cy='35' r='22' fill='%231B75BC'/><circle cx='65' cy='60' r='22' fill='%23F7941D'/><circle cx='45' cy='75' r='14' fill='%23FFC20E'/></svg>" />
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/logo.svg" />
 </head>
 <body>
 
   <!-- Top ribbon, like the PDF section headers -->
   <div class="ribbon">
-    <span class="ribbon-text">DISCOVER GUIDE&nbsp;|&nbsp;PHOTO POOL</span>
+    <span class="ribbon-brand">
+      <img class="ribbon-logo" src="assets/logo.svg" alt="" />
+      <span class="ribbon-text">PHOTO&nbsp;POOL</span>
+    </span>
     <span id="auth-area" class="ribbon-auth">
       <button id="signin-btn" class="btn-ribbon" hidden>Sign in with Google</button>
       <span id="user-chip" class="user-chip" hidden></span>
@@ -25,6 +30,7 @@
   <!-- Hero -->
   <header class="hero">
     <div class="hero-inner">
+      <img class="hero-logo" src="assets/logo.svg" alt="Photo pool logo" />
       <h1 class="hero-title">
         <span class="t-gray">REMEMBER</span><br />
         <span class="t-gray">OUR</span><br />
@@ -37,7 +43,7 @@
         else captured. It all lands in our shared Google&nbsp;Drive folder.
       </p>
       <div class="hero-actions">
-        <a href="#upload" class="btn btn-orange">Add your photos</a>
+        <a href="#upload" class="btn btn-orange">＋ Add your photos</a>
         <a href="#gallery" class="btn btn-blue-outline">Browse the pool</a>
       </div>
       <div class="hero-stats" id="hero-stats" hidden>
@@ -72,18 +78,28 @@
   <section id="upload" class="section">
     <div class="section-head">
       <h2 class="section-title t-orange">ADD PHOTOS</h2>
-      <p class="section-sub">Sign in with your Google account, then drop your photos here — they go straight into the shared folder.</p>
+      <p class="section-sub">Three steps: <strong>1)</strong> tap the button and pick your photos · <strong>2)</strong> check them · <strong>3)</strong> tap <em>Upload</em>. They go straight into the shared folder.</p>
     </div>
 
-    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload photos">
+    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Choose photos to upload">
       <svg class="dz-icon" viewBox="0 0 64 64" aria-hidden="true">
         <rect x="8" y="18" width="48" height="36" rx="5" fill="none" stroke="currentColor" stroke-width="3.5"/>
         <path d="M22 18 26 11h12l4 7" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/>
         <circle cx="32" cy="36" r="9" fill="none" stroke="currentColor" stroke-width="3.5"/>
       </svg>
-      <p class="dz-title" id="dz-title">Drag &amp; drop photos here</p>
-      <p class="dz-sub" id="dz-sub">or tap to choose from your device</p>
+      <p class="dz-title" id="dz-title">Choose photos</p>
+      <p class="dz-sub" id="dz-sub">tap here to pick from your gallery — or drag &amp; drop</p>
       <input type="file" id="file-input" accept="image/*,video/*" multiple hidden />
+    </div>
+
+    <!-- Staged photos waiting for confirmation -->
+    <div id="tray" class="tray" hidden>
+      <p class="tray-title">Ready to share <span id="tray-count"></span></p>
+      <div id="tray-grid" class="tray-grid"></div>
+      <div class="tray-actions">
+        <button id="tray-upload" class="btn btn-orange">Upload to shared folder ✓</button>
+        <button id="tray-clear" class="btn btn-gray-outline">Cancel</button>
+      </div>
     </div>
 
     <ul id="upload-list" class="upload-list" aria-live="polite"></ul>
@@ -109,9 +125,13 @@
   </section>
 
   <footer class="footer">
+    <img class="footer-logo" src="assets/logo.svg" alt="" />
     <p class="footer-hand">see you at the next one!</p>
     <p class="footer-note">Photos live in our shared Google Drive folder · <a id="folder-link" href="#" target="_blank" rel="noopener">open it in Drive</a></p>
   </footer>
+
+  <!-- Floating add button -->
+  <button id="fab" class="fab" aria-label="Add photos">＋</button>
 
   <!-- Lightbox -->
   <div id="lightbox" class="lightbox" hidden>
