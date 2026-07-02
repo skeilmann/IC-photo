@@ -1123,7 +1123,14 @@
     }
     staged = staged.concat(media);
     renderTray();
-    els.tray.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    // bring the confirm tray front and center — especially when photos were
+    // picked via the floating + button far from the upload section
+    requestAnimationFrame(() => {
+      els.tray.scrollIntoView({ behavior: "smooth", block: "center" });
+      els.tray.classList.remove("is-pulsing");
+      void els.tray.offsetWidth; // restart the animation
+      els.tray.classList.add("is-pulsing");
+    });
   }
 
   function renderTray() {
@@ -1248,6 +1255,11 @@
           li.classList.add("is-done");
           fill.style.width = "100%";
           status.textContent = "Done ✓";
+          // tidy up after a moment so long batches don't pile up
+          setTimeout(() => {
+            li.classList.add("fade-out");
+            setTimeout(() => li.remove(), 600);
+          }, 3500);
         } else if (xhr.status === 401) {
           // token expired — ask again and let the user retry
           dropSession();
