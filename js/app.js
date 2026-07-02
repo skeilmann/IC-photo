@@ -50,6 +50,8 @@
     lbDelete: $("#lb-delete"),
     lbFav: $("#lb-fav"),
     lbRotate: $("#lb-rotate"),
+    lbShare: $("#lb-share"),
+    lbSave: $("#lb-save"),
     review: $("#review"),
     reviewList: $("#review-list"),
     fReset: $("#f-reset"),
@@ -810,6 +812,87 @@
   }
 
   els.lbRotate.addEventListener("click", rotateCurrent);
+
+  // ---------- send / share via the phone's native share sheet ----------
+
+  async function shareCurrent() {
+    const f = flatOrder[lbIndex];
+    if (!f) return;
+    const driveLink = "https://drive.google.com/file/d/" + f.id + "/view";
+    const title = cfg.EVENT_NAME || "Shared photo";
+
+    els.lbShare.disabled = true;
+    try {
+      // Best case: hand the actual image file to the share sheet
+      // (WhatsApp, Telegram, AirDrop, email… get the photo itself)
+      if (navigator.canShare && f.mimeType.startsWith("image/")) {
+        try {
+          const blob = await (await fetch(imgUrl(f, 2048))).blob();
+          const file = new File([blob], f.name || "photo.jpg", {
+            type: blob.type || "image/jpeg",
+          });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title });
+            return;
+          }
+        } catch { /* CORS or fetch hiccup — fall through to link share */ }
+      }
+      // Next best: native share sheet with the Drive link
+      if (navigator.share) {
+        await navigator.share({ title, url: driveLink });
+        return;
+      }
+      // Desktop fallback: copy the link
+      await navigator.clipboard.writeText(driveLink);
+      window.alert("Link copied to clipboard:\n" + driveLink);
+    } catch (err) {
+      // user closed the share sheet — not an error
+      if (err && err.name !== "AbortError") {
+        window.alert("Couldn't share. Direct link:\n" + driveLink);
+      }
+    } finally {
+      els.lbShare.disabled = false;
+    }
+  }
+
+  els.lbShare.addEventListener("click", shareCurrent);
+
+  // ---------- save to device ----------
+
+  async function saveCurrent() {
+    const f = flatOrder[lbIndex];
+    if (!f) return;
+    els.lbSave.disabled = true;
+    try {
+      if (f.mimeType.startsWith("image/")) {
+        // download the full-size image as a real file
+        const blob = await (await fetch(imgUrl(f, 2048))).blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = f.name || "photo.jpg";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      } else {
+        // videos: let Drive serve the original file
+        window.open(
+          "https://drive.google.com/uc?export=download&id=" + f.id,
+          "_blank", "noopener"
+        );
+      }
+    } catch {
+      // CORS hiccup — fall back to Drive's own download
+      window.open(
+        "https://drive.google.com/uc?export=download&id=" + f.id,
+        "_blank", "noopener"
+      );
+    } finally {
+      els.lbSave.disabled = false;
+    }
+  }
+
+  els.lbSave.addEventListener("click", saveCurrent);
 
   // ---------- favorites ----------
 
