@@ -75,6 +75,15 @@
     </p>
   </section>
 
+  <!-- Admin review panel (visible only to the admin when requests exist) -->
+  <section id="review" class="section" hidden>
+    <div class="section-head">
+      <h2 class="section-title t-red">REVIEW REQUESTS</h2>
+      <p class="section-sub">These photos were flagged for deletion and are hidden from everyone else until you decide.</p>
+    </div>
+    <div id="review-list" class="review-list"></div>
+  </section>
+
   <!-- Upload -->
   <section id="upload" class="section">
     <div class="section-head">
@@ -127,6 +136,7 @@
       <select id="f-sort" class="select" aria-label="Sort order">
         <option value="new">Newest first</option>
         <option value="old">Oldest first</option>
+        <option value="fav">Most ♥ first</option>
       </select>
       <select id="f-day" class="select" aria-label="Filter by day">
         <option value="">All days</option>
@@ -171,7 +181,11 @@
     <div class="lb-stage" id="lb-stage"></div>
     <button class="lb-next" aria-label="Next">›</button>
     <div class="lb-caption" id="lb-caption"></div>
-    <button class="lb-delete" id="lb-delete">🗑 Delete</button>
+    <div class="lb-tools">
+      <button class="lb-tool" id="lb-fav" aria-label="Favorite">♡</button>
+      <button class="lb-tool" id="lb-rotate" aria-label="Rotate">⟳</button>
+      <button class="lb-tool lb-delete" id="lb-delete">🗑 Delete</button>
+    </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>

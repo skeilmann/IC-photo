@@ -16,7 +16,11 @@
     cfg.FOLDER_ID && !cfg.FOLDER_ID.startsWith("YOUR_");
 
   const UPLOAD_SCOPES =
-    "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile";
+    "https://www.googleapis.com/auth/drive.file " +
+    "https://www.googleapis.com/auth/userinfo.profile " +
+    "https://www.googleapis.com/auth/userinfo.email";
+
+  const META_PREFIX = "pool-meta__"; // per-user JSON files in the shared folder
 
   // ---------- element handles ----------
   const $ = (sel) => document.querySelector(sel);
@@ -44,6 +48,10 @@
     map: $("#map"),
     mapNote: $("#map-note"),
     lbDelete: $("#lb-delete"),
+    lbFav: $("#lb-fav"),
+    lbRotate: $("#lb-rotate"),
+    review: $("#review"),
+    reviewList: $("#review-list"),
     fReset: $("#f-reset"),
     galleryStatus: $("#gallery-status"),
     galleryGroups: $("#gallery-groups"),
@@ -64,6 +72,18 @@
   let accessToken = null;
   let tokenClient = null;
   let userName = null;
+  let userSub = null;      // stable Google account id
+  let isAdmin = false;
+
+  // ---- shared metadata aggregated from everyone's pool-meta files ----
+  let favCounts = new Map();     // fileId -> number of hearts
+  let myFavs = new Set();        // fileIds the signed-in user hearted
+  let deleteReqBy = new Map();   // fileId -> requester display name
+  let dismissed = new Set();     // fileIds the admin decided to keep
+  let rotations = new Map();     // fileId -> degrees (0/90/180/270)
+  let metaMine = { deleteRequests: [], rotations: {}, dismissed: [] };
+  let metaMineId = null;         // Drive file id of my meta file
+  let metaByName = new Map();    // meta file name -> {id, data}
 
   // ============================================================
   // Gallery: list the shared folder with the public API key
@@ -80,7 +100,7 @@
     els.folderLink.href = "https://drive.google.com/drive/folders/" + cfg.FOLDER_ID;
 
     const fields =
-      "nextPageToken,files(id,name,mimeType,createdTime,thumbnailLink,md5Checksum," +
+      "nextPageToken,files(id,name,mimeType,createdTime,modifiedTime,thumbnailLink,md5Checksum," +
       "imageMediaMetadata(time,width,height,location,cameraMake,cameraModel)," +
       "videoMediaMetadata(durationMillis)," +
       "owners(displayName),lastModifyingUser(displayName))";
@@ -111,6 +131,9 @@
       return;
     }
 
+    const metaFiles = out.filter((f) => f.name && f.name.startsWith(META_PREFIX));
+    await loadMetas(metaFiles);
+
     files = out.filter(
       (f) => f.mimeType.startsWith("image/") || f.mimeType.startsWith("video/")
     );
@@ -125,6 +148,104 @@
     updateStats();
     populateFilters();
     renderGallery();
+    renderReview();
+  }
+
+  // ---------- admin review panel ----------
+
+  function renderReview() {
+    if (!isAdmin) { els.review.hidden = true; return; }
+    const flagged = files.filter(
+      (f) => deleteReqBy.has(f.id) && !dismissed.has(f.id)
+    );
+    els.review.hidden = !flagged.length;
+    els.reviewList.innerHTML = "";
+    for (const f of flagged) {
+      const card = document.createElement("div");
+      card.className = "review-card";
+
+      const img = document.createElement("img");
+      img.src = imgUrl(f, 300);
+      img.alt = f.name;
+      img.addEventListener("click", () => {
+        flatOrder = flagged;
+        openLightbox(flagged.indexOf(f));
+      });
+      card.appendChild(img);
+
+      const info = document.createElement("div");
+      info.className = "review-info";
+      info.innerHTML = "<strong></strong><span></span>";
+      info.querySelector("strong").textContent =
+        "Requested by " + (deleteReqBy.get(f.id) || "someone");
+      info.querySelector("span").textContent =
+        "Photo by " + fileOwner(f) + " · " +
+        fileDate(f).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      card.appendChild(info);
+
+      const actions = document.createElement("div");
+      actions.className = "review-actions";
+
+      const keep = document.createElement("button");
+      keep.className = "btn-small btn-keep";
+      keep.textContent = "Keep photo";
+      keep.addEventListener("click", () => {
+        metaMine.dismissed.push(f.id);
+        dismissed.add(f.id);
+        saveMeta();
+        renderReview();
+        renderGallery();
+      });
+      actions.appendChild(keep);
+
+      const rm = document.createElement("button");
+      rm.className = "btn-small btn-remove";
+      rm.textContent = "Remove photo";
+      rm.addEventListener("click", async () => {
+        if (!window.confirm("Remove this photo from the shared pool?")) return;
+        rm.disabled = true;
+        let ok = false;
+        // try trash first (works if the admin owns the file), then
+        // detaching it from the shared folder (works for others' uploads)
+        try {
+          let res = await fetch(
+            "https://www.googleapis.com/drive/v3/files/" + f.id,
+            {
+              method: "PATCH",
+              headers: {
+                Authorization: "Bearer " + accessToken,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ trashed: true }),
+            }
+          );
+          if (!res.ok) {
+            res = await fetch(
+              "https://www.googleapis.com/drive/v3/files/" + f.id +
+              "?removeParents=" + cfg.FOLDER_ID,
+              { method: "PATCH", headers: { Authorization: "Bearer " + accessToken } }
+            );
+          }
+          ok = res.ok;
+        } catch { ok = false; }
+        rm.disabled = false;
+        if (ok) {
+          files = files.filter((x) => x.id !== f.id);
+          updateStats();
+          renderReview();
+          renderGallery();
+        } else {
+          window.alert(
+            "Drive refused the removal from here. Open the folder in Drive and delete the file there:\n" +
+            "https://drive.google.com/drive/folders/" + cfg.FOLDER_ID
+          );
+        }
+      });
+      actions.appendChild(rm);
+
+      card.appendChild(actions);
+      els.reviewList.appendChild(card);
+    }
   }
 
   // ---------- filtering & sorting ----------
@@ -161,10 +282,19 @@
 
   function visibleFiles() {
     let list = files;
+    if (!isAdmin) {
+      const hidden = hiddenIds();
+      if (hidden.size) list = list.filter((f) => !hidden.has(f.id));
+    }
     if (els.fType.value) list = list.filter((f) => f.mimeType.startsWith(els.fType.value + "/"));
     if (els.fTime.value) list = list.filter((f) => timeOfDay(f) === els.fTime.value);
     if (els.fDay.value) list = list.filter((f) => dayKey(f) === els.fDay.value);
     if (els.fPerson.value) list = list.filter((f) => fileOwner(f) === els.fPerson.value);
+    if (els.fSort.value === "fav") {
+      return [...list].sort((a, b) =>
+        (favCounts.get(b.id) || 0) - (favCounts.get(a.id) || 0) || fileDate(b) - fileDate(a)
+      );
+    }
     const dir = els.fSort.value === "old" ? 1 : -1;
     return [...list].sort((a, b) => dir * (fileDate(a) - fileDate(b)));
   }
@@ -190,6 +320,120 @@
     updateToolbarState();
     renderGallery();
   });
+
+  // ---------- shared meta files (favorites / requests / rotations) ----------
+
+  async function loadMetas(metaFiles) {
+    favCounts = new Map();
+    deleteReqBy = new Map();
+    dismissed = new Set();
+    rotations = new Map();
+    metaByName = new Map();
+
+    const loaded = await Promise.all(
+      metaFiles.map(async (f) => {
+        try {
+          const r = await fetch(
+            "https://www.googleapis.com/drive/v3/files/" + f.id +
+            "?alt=media&key=" + cfg.API_KEY
+          );
+          if (!r.ok) return null;
+          return { file: f, data: await r.json() };
+        } catch { return null; }
+      })
+    );
+
+    // oldest first so newer rotations win
+    const entries = loaded.filter(Boolean).sort(
+      (a, b) => new Date(a.file.modifiedTime) - new Date(b.file.modifiedTime)
+    );
+
+    for (const { file, data } of entries) {
+      metaByName.set(file.name, { id: file.id, data });
+      for (const id of data.favorites || []) {
+        favCounts.set(id, (favCounts.get(id) || 0) + 1);
+      }
+      for (const req of data.deleteRequests || []) {
+        const id = typeof req === "string" ? req : req.id;
+        if (id && !deleteReqBy.has(id)) deleteReqBy.set(id, data.name || "someone");
+      }
+      for (const [id, deg] of Object.entries(data.rotations || {})) {
+        rotations.set(id, deg);
+      }
+      if (data.admin) for (const id of data.dismissed || []) dismissed.add(id);
+    }
+
+    // re-attach my own meta if I'm signed in
+    if (userSub) adoptMyMeta();
+  }
+
+  function adoptMyMeta() {
+    const mine = metaByName.get(META_PREFIX + userSub + ".json");
+    if (mine) {
+      metaMineId = mine.id;
+      metaMine = Object.assign(
+        { deleteRequests: [], rotations: {}, dismissed: [] }, mine.data
+      );
+      myFavs = new Set(mine.data.favorites || []);
+    }
+  }
+
+  function hiddenIds() {
+    const out = new Set();
+    for (const id of deleteReqBy.keys()) if (!dismissed.has(id)) out.add(id);
+    return out;
+  }
+
+  let saveTimer = null;
+
+  function saveMeta() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(doSaveMeta, 600); // coalesce rapid taps
+  }
+
+  async function doSaveMeta() {
+    if (!accessToken || !userSub) return;
+    const body = JSON.stringify({
+      v: 1,
+      name: userName,
+      admin: isAdmin,
+      favorites: [...myFavs],
+      deleteRequests: metaMine.deleteRequests,
+      rotations: metaMine.rotations,
+      dismissed: metaMine.dismissed,
+    });
+    try {
+      if (metaMineId) {
+        await fetch(
+          "https://www.googleapis.com/upload/drive/v3/files/" + metaMineId +
+          "?uploadType=media",
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: "Bearer " + accessToken,
+              "Content-Type": "application/json",
+            },
+            body,
+          }
+        );
+      } else {
+        const form = new FormData();
+        form.append("metadata", new Blob([JSON.stringify({
+          name: META_PREFIX + userSub + ".json",
+          parents: [cfg.FOLDER_ID],
+          mimeType: "application/json",
+        })], { type: "application/json" }));
+        form.append("file", new Blob([body], { type: "application/json" }));
+        const r = await fetch(
+          "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
+          { method: "POST", headers: { Authorization: "Bearer " + accessToken }, body: form }
+        );
+        if (r.ok) metaMineId = (await r.json()).id;
+      }
+    } catch (err) {
+      console.error("meta save failed", err);
+    }
+  }
 
   function fileDate(f) {
     const exif = f.imageMediaMetadata && f.imageMediaMetadata.time;
@@ -348,6 +592,18 @@
           fig.appendChild(badge);
         }
 
+        const hearts = favCounts.get(f.id) || 0;
+        if (hearts > 0) {
+          const fav = document.createElement("span");
+          fav.className = "badge-fav";
+          fav.textContent = "♥ " + hearts;
+          fig.appendChild(fav);
+        }
+
+        if (isAdmin && deleteReqBy.has(f.id) && !dismissed.has(f.id)) {
+          fig.classList.add("is-flagged");
+        }
+
         const cap = document.createElement("figcaption");
         cap.textContent = fileOwner(f) + " · " +
           fileDate(f).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
@@ -482,6 +738,17 @@
       };
       hi.src = imgUrl(f, 2048);
     }
+    applyRotation();
+
+    // favorite state
+    const hearts = favCounts.get(f.id) || 0;
+    els.lbFav.textContent = (myFavs.has(f.id) ? "♥" : "♡") + (hearts ? " " + hearts : "");
+    els.lbFav.classList.toggle("is-fav", myFavs.has(f.id));
+
+    // delete vs delete-request, depending on ownership
+    const own = userName && fileOwner(f) === userName;
+    els.lbDelete.textContent = own || !accessToken ? "🗑 Delete" : "🚩 Ask to delete";
+
     const cam = f.imageMediaMetadata &&
       (f.imageMediaMetadata.cameraModel || f.imageMediaMetadata.cameraMake);
     els.lbCaption.textContent =
@@ -511,18 +778,81 @@
     if (e.key === "ArrowRight") lbStep(1);
   });
 
-  // ---------- delete (moves the file to the Drive trash) ----------
+  // ---------- rotate ----------
 
-  let pendingDelete = false;
+  function applyRotation() {
+    const f = flatOrder[lbIndex];
+    if (!f) return;
+    const img = els.lbStage.querySelector("img");
+    if (!img) return;
+    const deg = +(rotations.get(f.id) || 0);
+    img.style.transform = deg ? "rotate(" + deg + "deg)" : "";
+    // rotated 90/270: keep the image inside the viewport
+    if (deg % 180 !== 0) {
+      img.style.maxWidth = "84vh";
+      img.style.maxHeight = "92vw";
+    } else {
+      img.style.maxWidth = "";
+      img.style.maxHeight = "";
+    }
+  }
+
+  function rotateCurrent() {
+    const f = flatOrder[lbIndex];
+    if (!f || f.mimeType.startsWith("video/")) return;
+    const deg = (+(rotations.get(f.id) || 0) + 90) % 360;
+    rotations.set(f.id, deg);
+    applyRotation();
+    if (accessToken) { // persist for everyone; otherwise view-only rotation
+      metaMine.rotations[f.id] = deg;
+      saveMeta();
+    }
+  }
+
+  els.lbRotate.addEventListener("click", rotateCurrent);
+
+  // ---------- favorites ----------
+
+  function toggleFav() {
+    const f = flatOrder[lbIndex];
+    if (!f) return;
+    if (needSignIn(toggleFav)) return;
+    const n = favCounts.get(f.id) || 0;
+    if (myFavs.has(f.id)) {
+      myFavs.delete(f.id);
+      favCounts.set(f.id, Math.max(0, n - 1));
+    } else {
+      myFavs.add(f.id);
+      favCounts.set(f.id, n + 1);
+    }
+    saveMeta();
+    showLightboxItem();
+  }
+
+  els.lbFav.addEventListener("click", toggleFav);
+
+  // ---------- delete own / request deletion of someone else's ----------
 
   async function deleteCurrent() {
     const f = flatOrder[lbIndex];
     if (!f) return;
-    if (!accessToken) {
-      pendingDelete = true;
-      requestSignIn();
+    if (needSignIn(deleteCurrent)) return;
+
+    const own = fileOwner(f) === userName;
+    if (!own) {
+      if (!window.confirm(
+        "Ask for this photo to be deleted?\nIt will be hidden from everyone right away, and the admin will decide."
+      )) return;
+      metaMine.deleteRequests.push({ id: f.id, at: f.modifiedTime || "" });
+      deleteReqBy.set(f.id, userName);
+      saveMeta();
+      closeLightbox();
+      renderGallery();
+      renderReview();
+      window.alert("Request sent — the photo is hidden until the admin reviews it.");
       return;
     }
+
     if (!window.confirm("Delete this photo from the shared pool?\n(It moves to the Drive trash and can be restored for 30 days.)")) return;
 
     els.lbDelete.disabled = true;
@@ -605,22 +935,35 @@
       });
       const info = await r.json();
       userName = info.name || info.given_name || "you";
+      userSub = info.sub || null;
+      isAdmin = !!(cfg.ADMIN_EMAIL && info.email &&
+        info.email.toLowerCase() === cfg.ADMIN_EMAIL.toLowerCase());
     } catch { userName = "you"; }
 
     els.signinBtn.hidden = true;
-    els.userChip.textContent = "📷 " + userName;
+    els.userChip.textContent = (isAdmin ? "⭐ " : "📷 ") + userName;
     els.userChip.hidden = false;
     els.dzTitle.textContent = "Choose photos, " + userName.split(" ")[0];
 
-    // If sign-in was triggered by the Upload or Delete button, continue now
-    if (pendingUpload) {
-      pendingUpload = false;
-      confirmUpload();
+    adoptMyMeta();
+    renderReview();
+    renderGallery(); // admin now sees hidden photos; fav states show
+
+    // If sign-in was triggered by an action button, continue it now
+    if (pendingAction) {
+      const act = pendingAction;
+      pendingAction = null;
+      act();
     }
-    if (pendingDelete) {
-      pendingDelete = false;
-      deleteCurrent();
-    }
+  }
+
+  let pendingAction = null;
+
+  function needSignIn(action) {
+    if (accessToken) return false;
+    pendingAction = action;
+    requestSignIn();
+    return true;
   }
 
   function requestSignIn() {
@@ -633,7 +976,6 @@
   // ---------- pick → check → confirm flow ----------
 
   let staged = [];        // Files waiting for the user to press "Upload"
-  let pendingUpload = false;
 
   function handlePicked(fileList) {
     const media = [...fileList].filter(
@@ -689,11 +1031,7 @@
 
   function confirmUpload() {
     if (!staged.length) return;
-    if (!accessToken) {
-      pendingUpload = true;
-      requestSignIn();
-      return;
-    }
+    if (needSignIn(confirmUpload)) return;
     const batch = staged.splice(0);
     renderTray();
     uploadFiles(batch);

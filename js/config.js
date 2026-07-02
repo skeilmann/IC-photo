@@ -19,4 +19,8 @@ window.IC_CONFIG = {
 
   // Optional: shown as the site/album name in a few places.
   EVENT_NAME: "Stockholm Convention 2026",
+
+  // The Google account that acts as admin: sees photos hidden by delete
+  // requests and gets the review panel with Keep / Remove buttons.
+  ADMIN_EMAIL: "gheorghe.cazacu.cimislia@gmail.com",
 };

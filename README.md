@@ -24,6 +24,14 @@ OpenStreetMap), sorting and filters (day / person / photos vs videos / time of
 day), video duration badges, camera info, automatic duplicate hiding, and
 delete-own-photos (moves the file to the Drive trash).
 
+Community features (no server — each signed-in user keeps a small
+`pool-meta__*.json` file in the shared folder, and every client aggregates
+them): **favorites** (♥ votes, counts on tiles, "Most ♥ first" sort),
+**rotation** that persists for everyone, and **delete requests** — flagging
+someone else's photo hides it instantly for everybody except the admin
+(`ADMIN_EMAIL` in `js/config.js`), who gets a review panel with
+Keep / Remove buttons.
+
 ---
 
 ## Setup
