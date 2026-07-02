@@ -72,10 +72,15 @@
   let flatOrder = [];      // files in currently rendered order (for lightbox nav)
   let currentGroup = "all";
   let accessToken = null;
+  let tokenExpiresAt = 0;  // ms epoch; Google tokens live ~1 hour
   let tokenClient = null;
   let userName = null;
   let userSub = null;      // stable Google account id
+  let userEmail = null;
   let isAdmin = false;
+  let loginHint = null;    // last account, for one-click re-sign-in
+
+  const SESSION_KEY = "ic-photo-session";
 
   // ---- shared metadata aggregated from everyone's pool-meta files ----
   let favCounts = new Map();     // fileId -> number of hearts
@@ -1003,7 +1008,7 @@
       scope: UPLOAD_SCOPES,
       callback: onToken,
     });
-    els.signinBtn.hidden = false;
+    if (!accessToken) els.signinBtn.hidden = false;
   }
 
   async function onToken(resp) {
@@ -1012,6 +1017,7 @@
       return;
     }
     accessToken = resp.access_token;
+    tokenExpiresAt = Date.now() + (Math.max(60, (resp.expires_in || 3600) - 120)) * 1000;
     try {
       const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
         headers: { Authorization: "Bearer " + accessToken },
@@ -1019,18 +1025,13 @@
       const info = await r.json();
       userName = info.name || info.given_name || "you";
       userSub = info.sub || null;
-      isAdmin = !!(cfg.ADMIN_EMAIL && info.email &&
-        info.email.toLowerCase() === cfg.ADMIN_EMAIL.toLowerCase());
+      userEmail = info.email || null;
+      isAdmin = !!(cfg.ADMIN_EMAIL && userEmail &&
+        userEmail.toLowerCase() === cfg.ADMIN_EMAIL.toLowerCase());
     } catch { userName = "you"; }
 
-    els.signinBtn.hidden = true;
-    els.userChip.textContent = (isAdmin ? "⭐ " : "📷 ") + userName;
-    els.userChip.hidden = false;
-    els.dzTitle.textContent = "Choose photos, " + userName.split(" ")[0];
-
-    adoptMyMeta();
-    renderReview();
-    renderGallery(); // admin now sees hidden photos; fav states show
+    saveSession();
+    signedInUi();
 
     // If sign-in was triggered by an action button, continue it now
     if (pendingAction) {
@@ -1040,10 +1041,57 @@
     }
   }
 
+  function signedInUi() {
+    els.signinBtn.hidden = true;
+    els.userChip.textContent = (isAdmin ? "⭐ " : "📷 ") + userName;
+    els.userChip.hidden = false;
+    els.dzTitle.textContent = "Choose photos, " + userName.split(" ")[0];
+    adoptMyMeta();
+    renderReview();
+    renderGallery(); // admin sees hidden photos; fav states show
+  }
+
+  // ---------- session persistence across page reloads ----------
+
+  function saveSession() {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        token: accessToken,
+        expiresAt: tokenExpiresAt,
+        name: userName,
+        sub: userSub,
+        email: userEmail,
+        isAdmin,
+      }));
+    } catch { /* private mode etc. — sign-in just won't persist */ }
+  }
+
+  function restoreSession() {
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { }
+    if (!s) return;
+    loginHint = s.email || null; // for instant re-sign-in after expiry
+    if (!s.token || !(s.expiresAt > Date.now() + 30000)) return;
+    accessToken = s.token;
+    tokenExpiresAt = s.expiresAt;
+    userName = s.name;
+    userSub = s.sub;
+    userEmail = s.email;
+    isAdmin = !!s.isAdmin;
+    signedInUi();
+  }
+
+  function dropSession() {
+    accessToken = null;
+    tokenExpiresAt = 0;
+    try { localStorage.removeItem(SESSION_KEY); } catch { }
+  }
+
   let pendingAction = null;
 
   function needSignIn(action) {
-    if (accessToken) return false;
+    if (accessToken && Date.now() < tokenExpiresAt) return false;
+    if (accessToken) dropSession(); // expired
     pendingAction = action;
     requestSignIn();
     return true;
@@ -1051,7 +1099,10 @@
 
   function requestSignIn() {
     if (!tokenClient) return;
-    tokenClient.requestAccessToken();
+    // with a known account, skip the account chooser for an instant popup
+    tokenClient.requestAccessToken(
+      loginHint ? { prompt: "", login_hint: loginHint } : {}
+    );
   }
 
   els.signinBtn.addEventListener("click", requestSignIn);
@@ -1199,7 +1250,7 @@
           status.textContent = "Done ✓";
         } else if (xhr.status === 401) {
           // token expired — ask again and let the user retry
-          accessToken = null;
+          dropSession();
           li.classList.add("is-error");
           status.textContent = "Sign in";
           requestSignIn();
@@ -1224,6 +1275,7 @@
   // ============================================================
 
   if (!configured) els.setupNotice.hidden = false;
+  if (configured) restoreSession(); // stay signed in across page reloads
   loadGallery();
   if (document.readyState === "complete") initAuth();
   else window.addEventListener("load", initAuth);
